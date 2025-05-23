@@ -6,7 +6,8 @@ import {
     FileText,
     Users,
     EuroIcon,
-    ArrowRight
+    ArrowRight,
+    Download
 } from 'lucide-react';
 import { useUserInfoStore } from '@/zustand/userInfoStore';
 import { useTranslation } from 'react-i18next';
@@ -17,13 +18,6 @@ import Footer from '@/components/footer/Footer';
 
 const ModuleCard = ({ title, icon, path, description, className, setIsOpen }) => (
     <Link
-        // onClick={() => {
-        //     console.log('Clicked module card:', title);
-        //     console.log('Path:', path);
-        // }}
-        // onClick={setIsOpen(false)}
-        // Setear isOpen a false al hacer clic en el módulo
-
         onClick={() => {
             setIsOpen(false);
         }}
@@ -65,6 +59,16 @@ const Home = () => {
     const startTour = () => {
         setSteps(steps);
         setIsOpen(true);
+    };
+
+    const downloadManual = () => {
+        // Create a link element
+        const link = document.createElement('a');
+        link.href = '/manual.pdf'; // Path to the PDF file in the public directory
+        link.download = 'Manual_Rapitecnic.pdf';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     const modules = [
@@ -116,14 +120,22 @@ const Home = () => {
                         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
                             {t('MainPanel')}
                         </h1>
-                        <Button
-                            onClick={startTour}
-                            variant="gradientGlow"
-                        // className="bg-blue-500 text-white hover:bg-blue-600"
-                        >
-                            {/* Iniciar Tour */}
-                            {t('StartTour')}
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button
+                                onClick={downloadManual}
+                                variant="outline"
+                                className="flex items-center gap-2"
+                            >
+                                <Download className="h-4 w-4" />
+                                {t('DownloadManual')}
+                            </Button>
+                            <Button
+                                onClick={startTour}
+                                variant="gradientGlow"
+                            >
+                                {t('StartTour')}
+                            </Button>
+                        </div>
                     </div>
                 </header>
 
