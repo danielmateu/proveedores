@@ -239,6 +239,19 @@ export default function SuperAdminPage() {
         }, 2000);
     };
 
+    const handleDeleteNotice = async (noticeId) => {
+        // Refresh the notices list after deletion
+        if (userInfo?.Ex_InvoicingAddressID) {
+            fetchAllNotices();
+        }
+        
+        toast({
+            title: "Aviso eliminado",
+            description: "El aviso ha sido eliminado correctamente",
+            variant: "success",
+        });
+    };
+
     if (customersLoading || noticesLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -353,7 +366,11 @@ export default function SuperAdminPage() {
                         </div>
 
                         <div className="mt-6">
-                            <NoticesTable notices={filteredNotices.slice(0, 10)} title={(t('Lastnotices'))} />
+                            <NoticesTable 
+                                notices={filteredNotices.slice(0, 10)} 
+                                title={(t('Lastnotices'))} 
+                                onDeleteNotice={handleDeleteNotice}
+                            />
                         </div>
 
                         <div className="mt-6">
@@ -428,7 +445,12 @@ export default function SuperAdminPage() {
                     </TabsContent>
 
                     <TabsContent value="notices">
-                        <NoticesTable notices={filteredNotices} title={(t('AllNotices'))} all={true} />
+                        <NoticesTable 
+                            notices={filteredNotices} 
+                            title={(t('AllNotices'))} 
+                            all={true} 
+                            onDeleteNotice={handleDeleteNotice}
+                        />
                     </TabsContent>
 
                     <TabsContent value="payments">

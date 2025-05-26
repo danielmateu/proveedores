@@ -7,6 +7,10 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { useTranslation } from "react-i18next";
 import CalendarRange from "../CalendarRange";
 import { useState } from "react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Loader2, Trash2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 const statusOptionsMapping = [
     {
@@ -31,10 +35,13 @@ const statusOptionsMapping = [
     },
 ];
 
-export default function NoticesTables({ notices, title = "Avisos Filtrados", all = false }) {
+export default function NoticesTables({ notices, title = "Avisos Filtrados", all = false, onDeleteNotice }) {
     // console.log('notices', notices);
-
+    const { toast } = useToast();
     const [dateRange, setDateRange] = useState({ from: undefined, to: undefined });
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [noticeToDelete, setNoticeToDelete] = useState(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const getStatusBadgeVariant = (statusId) => {
         const status = statusOptionsMapping.find(s => s.statusId.includes(statusId));
@@ -57,6 +64,62 @@ export default function NoticesTables({ notices, title = "Avisos Filtrados", all
             from: range?.from ? new Date(range.from) : undefined,
             to: range?.to ? new Date(range.to) : undefined
         });
+    };
+
+    const handleDeleteClick = (e, notice) => {
+        e.stopPropagation();
+        setNoticeToDelete(notice);
+        setDeleteDialogOpen(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!noticeToDelete) return;
+        
+        setIsDeleting(true);
+        try {
+            const apiUrl = import.meta.env.VITE_API_URL;
+            const loginID = localStorage.getItem('LoginID');
+            
+            const response = await fetch(`${apiUrl}/noticeController/deleteNotice`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    docEntry: noticeToDelete.NoticeHeaderID,
+                    timestamp: new Date().toISOString(),
+                    loginID: loginID,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Error al eliminar el aviso: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            
+            toast({
+                title: "Aviso eliminado",
+                description: data.message || "El aviso ha sido eliminado correctamente",
+                variant: "success",
+            });
+            
+            // Call the parent component's onDeleteNotice function if provided
+            if (onDeleteNotice) {
+                onDeleteNotice(noticeToDelete.NoticeHeaderID);
+            }
+        } catch (error) {
+            console.error("Error al eliminar el aviso:", error);
+            toast({
+                title: "Error",
+                description: "No se pudo eliminar el aviso. Inténtelo de nuevo más tarde.",
+                variant: "destructive",
+            });
+        } finally {
+            setIsDeleting(false);
+            setDeleteDialogOpen(false);
+            setNoticeToDelete(null);
+        }
     };
 
     const { t } = useTranslation()
@@ -111,6 +174,11 @@ export default function NoticesTables({ notices, title = "Avisos Filtrados", all
                                         <TableHead>
                                             Colaborador
                                         </TableHead>
+                                        {onDeleteNotice && (
+                                            <TableHead className="text-right">
+                                                Acciones
+                                            </TableHead>
+                                        )}
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -127,6 +195,18 @@ export default function NoticesTables({ notices, title = "Avisos Filtrados", all
                                                 </Badge>
                                             </TableCell>
                                             <TableCell>{`${notice.CustomerTaxName}`}</TableCell>
+                                            {onDeleteNotice && (
+                                                <TableCell className="text-right">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-100"
+                                                        onClick={(e) => handleDeleteClick(e, notice)}
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </TableCell>
+                                            )}
                                         </TableRow>
                                     ))}
                                 </TableBody>
@@ -141,6 +221,35 @@ export default function NoticesTables({ notices, title = "Avisos Filtrados", all
                     </div>
                 )}
             </CardContent>
+
+            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Esta acción eliminará permanentemente el aviso {noticeToDelete?.NoticeHeaderID}. 
+                            Esta acción no se puede deshacer.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction 
+                            onClick={confirmDelete}
+                            disabled={isDeleting}
+                            className="bg-red-500 hover:bg-red-600"
+                        >
+                            {isDeleting ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Eliminando...
+                                </>
+                            ) : (
+                                "Eliminar"
+                            )}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </Card >
     );
 }

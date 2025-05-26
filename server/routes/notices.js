@@ -42,6 +42,9 @@ router.get("/getEx_Status", noticeController.getEx_Status);
 router.get("/getEx_InvoicingAddress", noticeController.getEx_InvoicingAddress);
 // get_Ex_PendingPayments
 router.get("/get_Ex_PendingPayments", noticeController.get_Ex_PendingPayments);
+// getPendingPaymentDetails
+router.get("/getPendingPaymentDetails", noticeController.getPendingPaymentDetails);
+// deleteNotice
+router.post("/deleteNotice", noticeController.deleteNotice);
 
 export default router;
-

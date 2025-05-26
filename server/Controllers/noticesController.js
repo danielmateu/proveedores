@@ -1115,4 +1115,117 @@ NoticesController.get_Ex_PendingPayments = async (req, res) => {
     }
 }
 
+NoticesController.getPendingPaymentDetails = async (req, res) => {
+    try {
+        const { invoicingAddressId, month, quincena } = req.query;
+        
+        if (!invoicingAddressId || !month || !quincena) {
+            return res.status(400).json({
+                success: false,
+                message: 'Se requieren los parámetros invoicingAddressId, month y quincena'
+            });
+        }
+
+        const query = `
+            SELECT *
+            FROM [Rapitecnic].[dbo].[ex_GetPendingPaymentsExtended] 
+            WHERE Ex_InvoicingAddressID = @invoicingAddressId 
+            AND MES = @month 
+            AND QUINCENA = @quincena
+        `;
+
+        const request = new sql.Request();
+        request.input('invoicingAddressId', sql.Int, parseInt(invoicingAddressId));
+        request.input('month', sql.Int, parseInt(month));
+        request.input('quincena', sql.Int, parseInt(quincena));
+
+        const result = await request.query(query);
+
+        res.json({
+            success: true,
+            data: result.recordset
+        });
+    } catch (error) {
+        console.error('Error al obtener los detalles de pagos pendientes:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener los detalles de pagos pendientes',
+            error: error.message
+        });
+    }
+};
+
+NoticesController.deleteNotice = async (req, res) => {
+    try {
+        const { docEntry, timestamp, loginID } = req.body;
+        
+        if (!docEntry) {
+            return res.status(400).json({
+                success: false,
+                message: 'Se requiere el ID del aviso (docEntry)'
+            });
+        }
+        
+        // First check if the notice exists
+        const checkQuery = `
+            SELECT NoticeHeaderID, StatusID 
+            FROM NoticeHeader 
+            WHERE NoticeHeaderID = @docEntry
+        `;
+        
+        const checkRequest = new sql.Request();
+        checkRequest.input('docEntry', sql.Int, docEntry);
+        const checkResult = await checkRequest.query(checkQuery);
+        
+        if (checkResult.recordset.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Aviso no encontrado'
+            });
+        }
+        
+        // Check if the notice can be deleted (only certain statuses)
+        const notice = checkResult.recordset[0];
+        const allowedStatuses = [1, 26]; // Example: pending, assigned
+        
+        if (!allowedStatuses.includes(notice.StatusID)) {
+            return res.status(403).json({
+                success: false,
+                message: 'No se puede eliminar un aviso con este estado'
+            });
+        }
+        
+        // Delete the notice
+        const deleteQuery = `
+            -- First delete from Ex_Notices
+            DELETE FROM Ex_Notices WHERE NoticeHeaderID = @docEntry;
+            
+            -- Then delete from NoticeHeader
+            DELETE FROM NoticeHeader WHERE NoticeHeaderID = @docEntry;
+            
+            -- Log the deletion
+            INSERT INTO NoticeLog (NoticeHeaderID, LoginID, LogDate, LogType, LogDescription)
+            VALUES (@docEntry, @loginID, GETDATE(), 'DELETE', 'Aviso eliminado por usuario');
+        `;
+        
+        const deleteRequest = new sql.Request();
+        deleteRequest.input('docEntry', sql.Int, docEntry);
+        deleteRequest.input('loginID', sql.Int, loginID);
+        await deleteRequest.query(deleteQuery);
+        
+        res.json({
+            success: true,
+            message: 'Aviso eliminado correctamente'
+        });
+        
+    } catch (error) {
+        console.error('Error al eliminar el aviso:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al eliminar el aviso',
+            error: error.message
+        });
+    }
+};
+
 export default NoticesController;
