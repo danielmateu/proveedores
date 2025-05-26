@@ -158,21 +158,51 @@ export default function SuperAdminPage() {
 
     const generatePaymentPeriods = () => {
         const today = new Date();
+        const currentYear = today.getFullYear();
+        const currentMonth = today.getMonth();
         const periods = [];
         
-        // Generate 6 bi-weekly periods (past and future)
-        for (let i = -2; i <= 3; i++) {
-            const endDate = new Date(today);
-            endDate.setDate(today.getDate() + (i * 15));
+        // Generate 6 payment periods (3 past, current, 2 future)
+        for (let i = -3; i <= 2; i++) {
+            // Calculate the month offset
+            let targetMonth = currentMonth + Math.floor(i/2);
+            let targetYear = currentYear;
             
-            const startDate = new Date(endDate);
-            startDate.setDate(endDate.getDate() - 14);
+            // Adjust year if needed
+            while (targetMonth < 0) {
+                targetMonth += 12;
+                targetYear--;
+            }
+            while (targetMonth > 11) {
+                targetMonth -= 12;
+                targetYear++;
+            }
+            
+            // Determine if this is first half (1-15) or second half (16-end) of month
+            const isFirstHalf = (i % 2 === 0);
+            
+            // Create start and end dates
+            let startDate, endDate;
+            
+            if (isFirstHalf) {
+                startDate = new Date(targetYear, targetMonth, 1);
+                endDate = new Date(targetYear, targetMonth, 15);
+            } else {
+                startDate = new Date(targetYear, targetMonth, 16);
+                // Last day of month
+                endDate = new Date(targetYear, targetMonth + 1, 0);
+            }
+            
+            // Determine if this period is current
+            const isPast = endDate < today;
+            const isCurrent = !isPast && startDate <= today && today <= endDate;
             
             periods.push({
                 id: i,
                 startDate,
                 endDate,
-                label: `${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`
+                label: `${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`,
+                status: isPast ? "completed" : isCurrent ? "current" : "upcoming"
             });
         }
         
@@ -352,27 +382,30 @@ export default function SuperAdminPage() {
                                             <Card 
                                                 key={period.id} 
                                                 className={`cursor-pointer transition-all ${
-                                                    period.id < 0 
+                                                    period.status === "completed" 
                                                         ? "bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800" 
-                                                        : period.id === 0 
+                                                        : period.status === "current" 
                                                             ? "bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800" 
                                                             : "bg-gray-50 dark:bg-gray-800"
                                                 }`}
-                                                onClick={() => setShowPaymentDialog(true)}
+                                                onClick={() => {
+                                                    setSelectedPaymentPeriod(period);
+                                                    setShowPaymentDialog(true);
+                                                }}
                                             >
                                                 <CardContent className="p-4">
                                                     <div className="flex justify-between items-center">
                                                         <div>
                                                             <p className="font-medium">{period.label}</p>
                                                             <p className="text-sm text-gray-500 dark:text-gray-400">
-                                                                {period.id < 0 
+                                                                {period.status === "completed" 
                                                                     ? "Completado" 
-                                                                    : period.id === 0 
+                                                                    : period.status === "current" 
                                                                         ? "Período actual" 
                                                                         : "Próximo período"}
                                                             </p>
                                                         </div>
-                                                        {period.id < 0 && (
+                                                        {period.status === "completed" && (
                                                             <CheckCircle className="h-5 w-5 text-green-500" />
                                                         )}
                                                     </div>
@@ -438,9 +471,9 @@ export default function SuperAdminPage() {
                                             )}
                                         </div>
                                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                                            {period.id < 0 
+                                            {period.status === "completed" 
                                                 ? "Período pasado" 
-                                                : period.id === 0 
+                                                : period.status === "current" 
                                                     ? "Período actual" 
                                                     : "Período futuro"}
                                         </p>
