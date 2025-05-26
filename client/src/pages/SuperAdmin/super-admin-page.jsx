@@ -12,6 +12,9 @@ import {
     ShieldCheck,
     Users,
     Wallet,
+    Calendar,
+    CheckCircle,
+    XCircle
 } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import CalendarRange from "@/components/CalendarRange";
@@ -29,8 +32,10 @@ import { usePendingPaymentsStore } from "@/zustand/pendingPaymentsStore";
 import { mockDashboardStats } from "@/mocks/data";
 import { useTranslation } from "react-i18next";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-
-// import { Head } from '@unhead/react';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SuperAdminPage() {
     const userInfo = useUserInfoStore((state) => state.userInfo);
@@ -41,14 +46,14 @@ export default function SuperAdminPage() {
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [selectedModule, setSelectedModule] = useState("0");
     const [serviceTypeFilter, setServiceTypeFilter] = useState('0');
+    const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+    const [processingPayment, setProcessingPayment] = useState(false);
+    const [selectedPaymentPeriod, setSelectedPaymentPeriod] = useState(null);
 
+    const { toast } = useToast();
     const { customers, fetchCustomers, isLoading: customersLoading } = useCustomersStore();
-    // console.log('customers', customers);
     const { notices, fetchNotices, isLoading: noticesLoading, fetchAllNotices, externalNotices } = useNoticesStore();
-    // console.log('notices', notices);
-    // console.log('externalNotices', externalNotices);
     const { pendingPayments, fetchPendingPayments, isLoading: paymentsLoading } = usePendingPaymentsStore();
-    // console.log('pendingPayments', pendingPayments);
     const { t } = useTranslation();
 
     useEffect(() => {
@@ -125,11 +130,21 @@ export default function SuperAdminPage() {
     };
 
     const handleApprovePayment = (paymentId) => {
-        console.log(`Approving payment ${paymentId}`);
+        // In a real implementation, this would call an API endpoint
+        toast({
+            title: "Pago aprobado",
+            description: `El pago #${paymentId} ha sido aprobado correctamente`,
+            variant: "success",
+        });
     };
 
     const handleRejectPayment = (paymentId) => {
-        console.log(`Rejecting payment ${paymentId}`);
+        // In a real implementation, this would call an API endpoint
+        toast({
+            title: "Pago rechazado",
+            description: `El pago #${paymentId} ha sido rechazado`,
+            variant: "destructive",
+        });
     };
 
     const handleResetFilters = () => {
@@ -141,11 +156,63 @@ export default function SuperAdminPage() {
         setServiceTypeFilter('0');
     };
 
+    const generatePaymentPeriods = () => {
+        const today = new Date();
+        const periods = [];
+        
+        // Generate 6 bi-weekly periods (past and future)
+        for (let i = -2; i <= 3; i++) {
+            const endDate = new Date(today);
+            endDate.setDate(today.getDate() + (i * 15));
+            
+            const startDate = new Date(endDate);
+            startDate.setDate(endDate.getDate() - 14);
+            
+            periods.push({
+                id: i,
+                startDate,
+                endDate,
+                label: `${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`
+            });
+        }
+        
+        return periods;
+    };
+
+    const paymentPeriods = useMemo(() => generatePaymentPeriods(), []);
+
+    const handleProcessPayments = () => {
+        if (!selectedPaymentPeriod) {
+            toast({
+                title: "Error",
+                description: "Por favor seleccione un período de pago",
+                variant: "destructive",
+            });
+            return;
+        }
+
+        setProcessingPayment(true);
+        
+        // Simulate API call
+        setTimeout(() => {
+            setProcessingPayment(false);
+            setShowPaymentDialog(false);
+            
+            toast({
+                title: "Pagos procesados",
+                description: `Se han procesado los pagos para el período ${selectedPaymentPeriod.label}`,
+                variant: "success",
+            });
+            
+            // Reset selection
+            setSelectedPaymentPeriod(null);
+        }, 2000);
+    };
+
     if (customersLoading || noticesLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
                 <div className="text-center">
-                    {/* <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div> */}
                     <Loader className="animate-spin h-8 w-8 text-gray-500 mx-auto mb-4" />
                     <p className="mt-4 text-gray-600">{t("loading")}</p>
                 </div>
@@ -166,7 +233,6 @@ export default function SuperAdminPage() {
                                         className="text-3xl font-bold text-gray-900 dark:text-white hover:cursor-pointer truncate"
                                         onClick={handleResetFilters}
                                     >
-                                        {/* Panel SuperAdmin */}
                                         {t("PanelSuperAdmin")}
                                     </h1>
                                 </TooltipTrigger>
@@ -180,13 +246,22 @@ export default function SuperAdminPage() {
                                 variant={"info"}
                             >
                                 <ShieldAlert className="h-3.5 w-3.5 mr-1" />
-                                {/* Acceso SuperAdmin */}
                                 {t("SuperAdminAccess")}
                             </Badge>
-                            {/* <CalendarRange
+                            
+                            <Button 
+                                variant="outline" 
+                                className="flex items-center gap-2"
+                                onClick={() => setShowPaymentDialog(true)}
+                            >
+                                <CreditCard className="h-4 w-4" />
+                                Procesar Pagos Quincenales
+                            </Button>
+                            
+                            <CalendarRange
                                 date={dateRange}
                                 setDate={handleDateRangeChange}
-                            /> */}
+                            />
                         </div>
                     </div>
                 </div>
@@ -218,8 +293,6 @@ export default function SuperAdminPage() {
                             <StatCard
                                 title={(t("TotalCustomers"))}
                                 value={customers.length}
-                                // description={`${mockDashboardStats.customers.active} activos, ${mockDashboardStats.customers.inactive} inactivos`}
-                                // description={`${customers.length} activos, ${mockDashboardStats.customers.inactive} inactivos`}
                                 description={`${(t('active', { count: mockDashboardStats.customers.active }))}, ${(t('inactive', { count: mockDashboardStats.customers.inactive }))}`}
                                 icon={Building2}
                                 trend={{ value: 8, isPositive: true }}
@@ -261,6 +334,55 @@ export default function SuperAdminPage() {
                                 onReject={handleRejectPayment}
                             />
                         </div>
+                        
+                        <div className="mt-6">
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Calendar className="h-5 w-5" />
+                                        Calendario de Pagos Quincenales
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Gestione los pagos quincenales a proveedores de servicios
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        {paymentPeriods.map(period => (
+                                            <Card 
+                                                key={period.id} 
+                                                className={`cursor-pointer transition-all ${
+                                                    period.id < 0 
+                                                        ? "bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800" 
+                                                        : period.id === 0 
+                                                            ? "bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800" 
+                                                            : "bg-gray-50 dark:bg-gray-800"
+                                                }`}
+                                                onClick={() => setShowPaymentDialog(true)}
+                                            >
+                                                <CardContent className="p-4">
+                                                    <div className="flex justify-between items-center">
+                                                        <div>
+                                                            <p className="font-medium">{period.label}</p>
+                                                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                                                                {period.id < 0 
+                                                                    ? "Completado" 
+                                                                    : period.id === 0 
+                                                                        ? "Período actual" 
+                                                                        : "Próximo período"}
+                                                            </p>
+                                                        </div>
+                                                        {period.id < 0 && (
+                                                            <CheckCircle className="h-5 w-5 text-green-500" />
+                                                        )}
+                                                    </div>
+                                                </CardContent>
+                                            </Card>
+                                        ))}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
                     </TabsContent>
 
                     <TabsContent value="customers">
@@ -285,6 +407,69 @@ export default function SuperAdminPage() {
                     </TabsContent>
                 </Tabs>
             </main>
+            
+            <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Procesar Pagos Quincenales</DialogTitle>
+                        <DialogDescription>
+                            Seleccione el período para procesar los pagos a los proveedores de servicios.
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="grid gap-4 py-4">
+                        <div className="grid grid-cols-1 gap-2">
+                            <label className="text-sm font-medium">Período de pago</label>
+                            <div className="grid grid-cols-1 gap-2">
+                                {paymentPeriods.map(period => (
+                                    <div 
+                                        key={period.id}
+                                        className={`p-3 border rounded-md cursor-pointer ${
+                                            selectedPaymentPeriod?.id === period.id 
+                                                ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30" 
+                                                : "border-gray-200 dark:border-gray-700"
+                                        }`}
+                                        onClick={() => setSelectedPaymentPeriod(period)}
+                                    >
+                                        <div className="flex justify-between items-center">
+                                            <span>{period.label}</span>
+                                            {selectedPaymentPeriod?.id === period.id && (
+                                                <CheckCircle className="h-4 w-4 text-blue-500" />
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                                            {period.id < 0 
+                                                ? "Período pasado" 
+                                                : period.id === 0 
+                                                    ? "Período actual" 
+                                                    : "Período futuro"}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowPaymentDialog(false)}>
+                            Cancelar
+                        </Button>
+                        <Button 
+                            onClick={handleProcessPayments}
+                            disabled={!selectedPaymentPeriod || processingPayment}
+                        >
+                            {processingPayment ? (
+                                <>
+                                    <Loader className="mr-2 h-4 w-4 animate-spin" />
+                                    Procesando...
+                                </>
+                            ) : (
+                                "Procesar Pagos"
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
