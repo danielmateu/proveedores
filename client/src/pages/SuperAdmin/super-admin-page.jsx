@@ -69,7 +69,7 @@ export default function SuperAdminPage() {
     }, [pendingPayments]);
 
     const pendingPaymentsAmout = useMemo(() => {
-        return pendingPayments.reduce((total, payment) => total + payment.TotalAmount, 0);
+        return pendingPayments.reduce((total, payment) => total + (payment.TotalAmount || 0), 0);
     }, [pendingPayments]);
 
     // Pagos realizados, filtramos de external notices los que tienen paid en true
@@ -78,6 +78,30 @@ export default function SuperAdminPage() {
     }, [externalNotices]);
 
     const { t } = useTranslation();
+
+    // Definir statusOptionsMapping para el filtrado
+    const statusOptionsMapping = [
+        {
+            id: 1,
+            name: (t('InProcess')),
+            statusId: ["1", "26"],
+        },
+        {
+            id: 2,
+            name: (t('Finished')),
+            statusId: ["27"]
+        },
+        {
+            id: 3,
+            name: (t('Charged')),
+            statusId: ["38"]
+        },
+        {
+            id: 4,
+            name: (t('Canceled')),
+            statusId: ["20"]
+        },
+    ];
 
     useEffect(() => {
         document.title = 'Rapitecnic | ' + t('SuperAdminPanel');
@@ -121,8 +145,8 @@ export default function SuperAdminPage() {
 
             const matchesModule = selectedModule === "0" ||
                 (selectedModule.includes(',')
-                    ? selectedModule.split(',').includes(notice.Ex_StatusID.toString())
-                    : notice.Ex_StatusID.toString() === selectedModule);
+                    ? selectedModule.split(',').includes(notice.Ex_StatusID?.toString())
+                    : notice.Ex_StatusID?.toString() === selectedModule);
 
             const matchesUser = userInfo?.Administrator || notice.ExternalLoginID === userInfo?.ExternalLoginID;
 

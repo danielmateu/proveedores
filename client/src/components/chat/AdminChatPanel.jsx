@@ -3,6 +3,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Send, Search, Circle } from 'lucide-react';
 import { useUserInfoStore } from '@/zustand/userInfoStore';
+import { useCustomersStore } from '@/zustand/customersStore';
 import { io } from 'socket.io-client';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -17,31 +18,29 @@ const socket = io(apiUrl);
 export function AdminChatPanel() {
   const [message, setMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userMessages, setUserMessages] = useState({});
   const [onlineUsers, setOnlineUsers] = useState({});
   const [unreadCounts, setUnreadCounts] = useState({});
   const messagesEndRef = useRef(null);
   const userInfo = useUserInfoStore((state) => state.userInfo);
+  const { customers, fetchCustomers, isLoading } = useCustomersStore();
 
   useEffect(() => {
-    // Load users and messages from localStorage
-    const savedUsers = localStorage.getItem('chatUsers');
-    if (savedUsers) {
-      setUsers(JSON.parse(savedUsers));
-    }
-
+    // Cargar los clientes desde el store
+    fetchCustomers();
+    
+    // Cargar mensajes guardados del localStorage
     const savedMessages = localStorage.getItem('adminChatMessages');
     if (savedMessages) {
       setUserMessages(JSON.parse(savedMessages));
     }
 
-    // Connect to socket
+    // Conectar al socket
     socket.on('connect', () => {
       console.log('Admin connected to chat socket');
       
-      // Identify admin to server
+      // Identificar al admin en el servidor
       if (userInfo?.ExternalLoginID) {
         socket.emit('identify', {
           userId: userInfo.ExternalLoginID,
@@ -52,46 +51,24 @@ export function AdminChatPanel() {
       }
     });
 
-    // Listen for user status updates
+    // Escuchar actualizaciones de estado de usuarios
     socket.on('user-status', (data) => {
-      // Update online status
+      // Actualizar estado online
       setOnlineUsers(prev => ({
         ...prev,
         [data.userId]: data.status === 'online'
       }));
-      
-      // Add user to list if not already there
-      setUsers(prev => {
-        const existingUser = prev.find(u => u.id === data.userId);
-        if (!existingUser && data.userId) {
-          const newUsers = [...prev, { id: data.userId, name: data.name }];
-          localStorage.setItem('chatUsers', JSON.stringify(newUsers));
-          return newUsers;
-        }
-        return prev;
-      });
     });
 
-    // Listen for incoming messages
+    // Escuchar mensajes entrantes
     socket.on('chat-message', (data) => {
-      // Only process messages for admin
+      // Solo procesar mensajes para el admin
       if (!userInfo?.SuperAdmin) return;
       
       const senderId = data.sender;
       if (!senderId) return;
       
-      // Add user to list if not already there
-      setUsers(prev => {
-        const existingUser = prev.find(u => u.id === senderId);
-        if (!existingUser && senderId) {
-          const newUsers = [...prev, { id: senderId, name: data.senderName }];
-          localStorage.setItem('chatUsers', JSON.stringify(newUsers));
-          return newUsers;
-        }
-        return prev;
-      });
-      
-      // Add message to user's messages
+      // Añadir mensaje a los mensajes del usuario
       setUserMessages(prev => {
         const userMsgs = prev[senderId] || [];
         const updatedMsgs = [...userMsgs, {
@@ -112,7 +89,7 @@ export function AdminChatPanel() {
         return newMessages;
       });
       
-      // Increment unread count if not viewing this user's messages
+      // Incrementar contador de no leídos si no estamos viendo los mensajes de este usuario
       if (selectedUser?.id !== senderId) {
         setUnreadCounts(prev => ({
           ...prev,
@@ -125,14 +102,14 @@ export function AdminChatPanel() {
       socket.off('user-status');
       socket.off('chat-message');
     };
-  }, [userInfo, selectedUser]);
+  }, [userInfo, selectedUser, fetchCustomers]);
 
-  // Scroll to bottom when messages change
+  // Scroll al fondo cuando cambian los mensajes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [userMessages, selectedUser]);
 
-  // Reset unread count when selecting a user
+  // Resetear contador de no leídos al seleccionar un usuario
   useEffect(() => {
     if (selectedUser) {
       setUnreadCounts(prev => ({
@@ -155,7 +132,7 @@ export function AdminChatPanel() {
       recipient: selectedUser.id
     };
     
-    // Add message to user's messages
+    // Añadir mensaje a los mensajes del usuario
     setUserMessages(prev => {
       const userMsgs = prev[selectedUser.id] || [];
       const updatedMsgs = [...userMsgs, newMessage];
@@ -169,10 +146,10 @@ export function AdminChatPanel() {
       return newMessages;
     });
     
-    // Send message to server
+    // Enviar mensaje al servidor
     socket.emit('chat-message', newMessage);
     
-    // Clear input
+    // Limpiar input
     setMessage('');
   };
 
@@ -183,8 +160,11 @@ export function AdminChatPanel() {
     }
   };
 
-  const filteredUsers = users.filter(user => 
-    user.name.toLowerCase().includes(searchQuery.toLowerCase())
+  // Filtrar usuarios basados en la búsqueda
+  const filteredUsers = customers.filter(customer => 
+    (customer.Name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+     customer.Surname?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+     customer.TaxName?.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   const formatMessageTime = (timestamp) => {
@@ -192,21 +172,23 @@ export function AdminChatPanel() {
   };
 
   const formatLastMessageTime = (timestamp) => {
+    if (!timestamp) return '';
+    
     const messageDate = new Date(timestamp);
     const today = new Date();
     
-    // If message is from today, show time
+    // Si el mensaje es de hoy, mostrar hora
     if (messageDate.toDateString() === today.toDateString()) {
       return format(messageDate, 'HH:mm', { locale: es });
     }
     
-    // If message is from this week, show day name
+    // Si el mensaje es de esta semana, mostrar día
     const diffDays = Math.floor((today - messageDate) / (1000 * 60 * 60 * 24));
     if (diffDays < 7) {
       return format(messageDate, 'EEEE', { locale: es });
     }
     
-    // Otherwise show date
+    // De lo contrario mostrar fecha
     return format(messageDate, 'dd/MM/yyyy', { locale: es });
   };
 
@@ -217,7 +199,7 @@ export function AdminChatPanel() {
 
   return (
     <div className="flex h-[calc(100vh-16rem)] border rounded-lg overflow-hidden">
-      {/* User list */}
+      {/* Lista de usuarios */}
       <div className="w-1/3 border-r">
         <div className="p-3 border-b">
           <div className="relative">
@@ -231,28 +213,34 @@ export function AdminChatPanel() {
           </div>
         </div>
         <ScrollArea className="h-[calc(100%-3.5rem)]">
-          {filteredUsers.length === 0 ? (
+          {isLoading ? (
+            <div className="p-4 text-center text-gray-500">
+              Cargando usuarios...
+            </div>
+          ) : filteredUsers.length === 0 ? (
             <div className="p-4 text-center text-gray-500">
               No hay usuarios disponibles
             </div>
           ) : (
             filteredUsers.map(user => {
-              const lastMessage = getLastMessage(user.id);
-              const unreadCount = unreadCounts[user.id] || 0;
-              const isOnline = onlineUsers[user.id] || false;
+              const userId = user.Ex_InvoicingAddressID;
+              const lastMessage = getLastMessage(userId);
+              const unreadCount = unreadCounts[userId] || 0;
+              const isOnline = onlineUsers[userId] || false;
+              const userName = user.Name || user.TaxName;
               
               return (
                 <div
-                  key={user.id}
+                  key={userId}
                   className={`p-3 border-b cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${
-                    selectedUser?.id === user.id ? 'bg-gray-100 dark:bg-gray-800' : ''
+                    selectedUser?.id === userId ? 'bg-gray-100 dark:bg-gray-800' : ''
                   }`}
-                  onClick={() => setSelectedUser(user)}
+                  onClick={() => setSelectedUser({ id: userId, name: userName })}
                 >
                   <div className="flex items-center gap-3">
                     <div className="relative">
                       <Avatar>
-                        <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                        <AvatarFallback>{userName?.charAt(0) || 'U'}</AvatarFallback>
                       </Avatar>
                       <div className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white ${
                         isOnline ? 'bg-green-500' : 'bg-gray-400'
@@ -260,7 +248,7 @@ export function AdminChatPanel() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-center">
-                        <h4 className="font-medium truncate">{user.name}</h4>
+                        <h4 className="font-medium truncate">{userName}</h4>
                         {lastMessage && (
                           <span className="text-xs text-gray-500">
                             {formatLastMessageTime(lastMessage.timestamp)}
@@ -284,15 +272,15 @@ export function AdminChatPanel() {
         </ScrollArea>
       </div>
       
-      {/* Chat area */}
+      {/* Área de chat */}
       <div className="flex-1 flex flex-col">
         {selectedUser ? (
           <>
-            {/* Chat header */}
+            {/* Cabecera del chat */}
             <div className="p-3 border-b flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Avatar>
-                  <AvatarFallback>{selectedUser.name.charAt(0)}</AvatarFallback>
+                  <AvatarFallback>{selectedUser.name?.charAt(0) || 'U'}</AvatarFallback>
                 </Avatar>
                 <div>
                   <h3 className="font-medium">{selectedUser.name}</h3>
@@ -304,7 +292,7 @@ export function AdminChatPanel() {
               </div>
             </div>
             
-            {/* Chat messages */}
+            {/* Mensajes del chat */}
             <ScrollArea className="flex-1 p-3">
               <div className="space-y-3">
                 {(userMessages[selectedUser.id] || []).length === 0 ? (
@@ -320,7 +308,7 @@ export function AdminChatPanel() {
                       <div className="flex gap-2 max-w-[80%]">
                         {!msg.isAdmin && (
                           <Avatar className="h-8 w-8">
-                            <AvatarFallback>{selectedUser.name.charAt(0)}</AvatarFallback>
+                            <AvatarFallback>{selectedUser.name?.charAt(0) || 'U'}</AvatarFallback>
                           </Avatar>
                         )}
                         <div>
@@ -343,7 +331,7 @@ export function AdminChatPanel() {
               </div>
             </ScrollArea>
             
-            {/* Chat input */}
+            {/* Input del chat */}
             <div className="p-3 border-t">
               <div className="flex gap-2">
                 <Textarea
@@ -367,7 +355,9 @@ export function AdminChatPanel() {
         ) : (
           <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">
-              <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+              <div className="h-12 w-12 mx-auto mb-4 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                <Search className="h-6 w-6 text-gray-400" />
+              </div>
               <h3 className="text-lg font-medium mb-2">Centro de mensajes</h3>
               <p className="max-w-xs">Selecciona un usuario para ver sus mensajes y responder.</p>
             </div>

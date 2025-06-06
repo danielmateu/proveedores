@@ -27,17 +27,17 @@ export function ChatWidget() {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Load previous messages from localStorage
+    // Cargar mensajes previos del localStorage
     const savedMessages = localStorage.getItem(`chatMessages-${userInfo?.ExternalLoginID}`);
     if (savedMessages) {
       setMessages(JSON.parse(savedMessages));
     }
 
-    // Connect to socket
+    // Conectar al socket
     socket.on('connect', () => {
       console.log('Connected to chat socket');
       
-      // Identify user to server
+      // Identificar usuario al servidor
       if (userInfo?.ExternalLoginID) {
         socket.emit('identify', {
           userId: userInfo.ExternalLoginID,
@@ -48,9 +48,9 @@ export function ChatWidget() {
       }
     });
 
-    // Listen for incoming messages
+    // Escuchar mensajes entrantes
     socket.on('chat-message', (data) => {
-      // Only process messages for this user
+      // Solo procesar mensajes para este usuario
       if (data.recipient === userInfo?.ExternalLoginID || data.sender === userInfo?.ExternalLoginID) {
         const newMessage = {
           id: Date.now(),
@@ -67,24 +67,24 @@ export function ChatWidget() {
           return updatedMessages;
         });
         
-        // If chat is not open, increment unread count
+        // Si el chat no está abierto, incrementar contador de no leídos
         if (!isOpen) {
           setUnreadCount(prev => prev + 1);
         }
       }
     });
 
-    // Listen for typing indicators
+    // Escuchar indicadores de escritura
     socket.on('typing', (data) => {
       if (data.sender !== userInfo?.ExternalLoginID) {
         setIsTyping(true);
         
-        // Clear previous timeout
+        // Limpiar timeout anterior
         if (typingTimeout) {
           clearTimeout(typingTimeout);
         }
         
-        // Set new timeout to clear typing indicator
+        // Establecer nuevo timeout para limpiar indicador de escritura
         const timeout = setTimeout(() => {
           setIsTyping(false);
         }, 3000);
@@ -102,12 +102,12 @@ export function ChatWidget() {
     };
   }, [userInfo, isOpen]);
 
-  // Scroll to bottom when messages change
+  // Scroll al fondo cuando cambian los mensajes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Reset unread count when opening chat
+  // Resetear contador de no leídos al abrir el chat
   useEffect(() => {
     if (isOpen) {
       setUnreadCount(0);
@@ -135,10 +135,10 @@ export function ChatWidget() {
       isAdmin: userInfo.SuperAdmin
     };
     
-    // Send message to server
+    // Enviar mensaje al servidor
     socket.emit('chat-message', newMessage);
     
-    // Clear input
+    // Limpiar input
     setMessage('');
   };
 
@@ -148,7 +148,7 @@ export function ChatWidget() {
       handleSendMessage();
     }
     
-    // Send typing indicator
+    // Enviar indicador de escritura
     socket.emit('typing', {
       sender: userInfo?.ExternalLoginID,
       timestamp: new Date().toISOString()
@@ -178,7 +178,7 @@ export function ChatWidget() {
             isMinimized ? 'w-72 h-12' : 'w-80 sm:w-96 h-96'
           }`}
         >
-          {/* Chat header */}
+          {/* Cabecera del chat */}
           <div className="bg-blue-600 dark:bg-blue-800 text-white p-3 flex justify-between items-center cursor-pointer"
                onClick={toggleMinimize}>
             <div className="flex items-center gap-2">
@@ -193,7 +193,7 @@ export function ChatWidget() {
           
           {!isMinimized && (
             <>
-              {/* Chat messages */}
+              {/* Mensajes del chat */}
               <ScrollArea className="p-3 h-[calc(100%-6rem)]">
                 <div className="space-y-3">
                   {messages.length === 0 ? (
@@ -247,7 +247,7 @@ export function ChatWidget() {
                 </div>
               </ScrollArea>
               
-              {/* Chat input */}
+              {/* Input del chat */}
               <div className="p-3 border-t border-gray-200 dark:border-gray-700">
                 <div className="flex gap-2">
                   <Textarea
@@ -272,7 +272,7 @@ export function ChatWidget() {
         </div>
       )}
       
-      {/* Chat button */}
+      {/* Botón del chat */}
       <Button
         onClick={toggleChat}
         size="icon"
