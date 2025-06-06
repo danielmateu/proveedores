@@ -19,6 +19,7 @@ const setupWebSocket = (server) => {
     // Store connected users
     const connectedUsers = new Map();
     const adminUsers = new Set();
+    const messageCache = new Map(); // Cache para evitar duplicados
 
     io.on('connection', (socket) => {
         console.log('New socket connection:', socket.id);
@@ -62,6 +63,21 @@ const setupWebSocket = (server) => {
         // Handle chat messages
         socket.on('chat-message', (message) => {
             console.log('Received chat message:', message);
+            
+            // Verificar si el mensaje ya está en caché para evitar duplicados
+            const messageKey = `${message.id}-${message.sender}`;
+            if (messageCache.has(messageKey)) {
+                console.log('Message already processed, ignoring duplicate');
+                return;
+            }
+            
+            // Añadir mensaje a caché
+            messageCache.set(messageKey, true);
+            
+            // Limpiar caché después de 1 minuto para evitar que crezca demasiado
+            setTimeout(() => {
+                messageCache.delete(messageKey);
+            }, 60000);
             
             const userData = connectedUsers.get(socket.id);
             

@@ -25,7 +25,7 @@ import NuevoNegocioPage from "./pages/MisGestiones/nuevo-negocio-page";
 import AjustesPage from "./pages/Ajustes/ajustes_page";
 import SuperAdminPage from "./pages/SuperAdmin/super-admin-page";
 import NotFound404 from "./pages/NotFound404";
-import { ChatWidget } from "./components/chat/ChatWidget";
+import { ExternalChatWidget } from "./components/chat/ExternalChatWidget";
 
 function App() {
     const location = useLocation();
@@ -130,7 +130,7 @@ function App() {
                 <Route path="*" element={<NotFound404 />} />
             </Routes>
 
-            {isAuthenticated && <ChatWidget />}
+            {isAuthenticated && <ExternalChatWidget />}
         </div>
     );
 }
