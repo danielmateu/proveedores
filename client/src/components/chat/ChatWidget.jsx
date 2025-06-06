@@ -27,11 +27,15 @@ export function ChatWidget() {
   const userInfo = useUserInfoStore((state) => state.userInfo);
   const { toast } = useToast();
 
+  console.log('ChatWidget rendered, socket:', socket ? 'exists' : 'null');
+
   // Inicializar socket
   useEffect(() => {
+    console.log('Initializing socket in ChatWidget');
     // Crear una sola instancia del socket
     if (!socket) {
       socket = io(apiUrl);
+      console.log('New socket created in ChatWidget');
     }
 
     // Manejar eventos de conexión
@@ -84,7 +88,12 @@ export function ChatWidget() {
     // Cargar mensajes previos del localStorage
     const savedMessages = localStorage.getItem(`chatMessages-${userInfo.ExternalLoginID}`);
     if (savedMessages) {
-      setMessages(JSON.parse(savedMessages));
+      try {
+        setMessages(JSON.parse(savedMessages));
+      } catch (e) {
+        console.error('Error parsing saved messages:', e);
+        localStorage.removeItem(`chatMessages-${userInfo.ExternalLoginID}`);
+      }
     }
 
     // Escuchar mensajes entrantes
@@ -93,16 +102,21 @@ export function ChatWidget() {
       
       // Solo procesar mensajes para este usuario
       if (data.recipient === userInfo.ExternalLoginID || data.sender === userInfo.ExternalLoginID) {
-        const newMessage = {
-          id: Date.now(),
-          text: data.text,
-          sender: data.sender,
-          senderName: data.senderName,
-          timestamp: data.timestamp || new Date().toISOString(),
-          isAdmin: data.isAdmin
-        };
-        
+        // Evitar duplicados verificando si ya existe un mensaje con el mismo id
         setMessages(prev => {
+          if (prev.some(msg => msg.id === data.id)) {
+            return prev;
+          }
+          
+          const newMessage = {
+            id: data.id,
+            text: data.text,
+            sender: data.sender,
+            senderName: data.senderName,
+            timestamp: data.timestamp || new Date().toISOString(),
+            isAdmin: data.isAdmin
+          };
+          
           const updatedMessages = [...prev, newMessage];
           localStorage.setItem(`chatMessages-${userInfo.ExternalLoginID}`, JSON.stringify(updatedMessages));
           return updatedMessages;
@@ -183,13 +197,6 @@ export function ChatWidget() {
     
     // Enviar mensaje al servidor
     socket.emit('chat-message', newMessage);
-    
-    // Añadir mensaje localmente (optimista)
-    setMessages(prev => {
-      const updatedMessages = [...prev, newMessage];
-      localStorage.setItem(`chatMessages-${userInfo.ExternalLoginID}`, JSON.stringify(updatedMessages));
-      return updatedMessages;
-    });
     
     // Limpiar input
     setMessage('');

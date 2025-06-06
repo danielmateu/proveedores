@@ -23,16 +23,20 @@ export function AdminChatPanel() {
   const [onlineUsers, setOnlineUsers] = useState({});
   const [unreadCounts, setUnreadCounts] = useState({});
   const [isConnected, setIsConnected] = useState(false);
-  const [customersLoaded, setCustomersLoaded] = useState(false);
+  const [typingUsers, setTypingUsers] = useState({});
   const messagesEndRef = useRef(null);
   const userInfo = useUserInfoStore((state) => state.userInfo);
   const { customers, fetchCustomers, isLoading } = useCustomersStore();
+  
+  console.log('AdminChatPanel rendered, socket:', socket ? 'exists' : 'null');
 
   // Inicializar socket
   useEffect(() => {
+    console.log('Initializing socket in AdminChatPanel');
     // Crear una sola instancia del socket
     if (!socket) {
       socket = io(apiUrl);
+      console.log('New socket created in AdminChatPanel');
     }
 
     // Manejar eventos de conexión
@@ -78,19 +82,23 @@ export function AdminChatPanel() {
     };
   }, [userInfo]);
 
-  // Cargar clientes solo una vez
+  // Cargar clientes
   useEffect(() => {
-    if (!customersLoaded && !isLoading) {
+    if (!isLoading) {
       fetchCustomers();
-      setCustomersLoaded(true);
     }
-  }, [customersLoaded, isLoading, fetchCustomers]);
+  }, [fetchCustomers, isLoading]);
 
   useEffect(() => {
     // Cargar mensajes guardados del localStorage
     const savedMessages = localStorage.getItem('adminChatMessages');
     if (savedMessages) {
-      setUserMessages(JSON.parse(savedMessages));
+      try {
+        setUserMessages(JSON.parse(savedMessages));
+      } catch (e) {
+        console.error('Error parsing saved messages:', e);
+        localStorage.removeItem('adminChatMessages');
+      }
     }
 
     // Escuchar actualizaciones de estado de usuarios
@@ -115,8 +123,14 @@ export function AdminChatPanel() {
       // Añadir mensaje a los mensajes del usuario
       setUserMessages(prev => {
         const userMsgs = prev[senderId] || [];
+        
+        // Evitar duplicados verificando si ya existe un mensaje con el mismo id
+        if (userMsgs.some(msg => msg.id === data.id)) {
+          return prev;
+        }
+        
         const updatedMsgs = [...userMsgs, {
-          id: Date.now(),
+          id: data.id,
           text: data.text,
           sender: data.sender,
           senderName: data.senderName,
@@ -141,15 +155,46 @@ export function AdminChatPanel() {
         }));
       }
     };
+    
+    // Escuchar indicadores de escritura
+    const handleTyping = (data) => {
+      console.log('Typing indicator received:', data);
+      if (data.sender && data.sender !== userInfo?.ExternalLoginID) {
+        // Actualizar estado de escritura
+        setTypingUsers(prev => {
+          const newState = {
+            ...prev,
+            [data.sender]: new Date().getTime()
+          };
+          
+          // Programar limpieza después de 3 segundos
+          setTimeout(() => {
+            setTypingUsers(current => {
+              const timestamp = current[data.sender];
+              if (timestamp && new Date().getTime() - timestamp > 3000) {
+                const updated = { ...current };
+                delete updated[data.sender];
+                return updated;
+              }
+              return current;
+            });
+          }, 3000);
+          
+          return newState;
+        });
+      }
+    };
 
     socket.on('user-status', handleUserStatus);
     socket.on('chat-message', handleChatMessage);
+    socket.on('typing', handleTyping);
 
     return () => {
       socket.off('user-status', handleUserStatus);
       socket.off('chat-message', handleChatMessage);
+      socket.off('typing', handleTyping);
     };
-  }, [selectedUser]);
+  }, [selectedUser, userInfo]);
 
   // Scroll al fondo cuando cambian los mensajes
   useEffect(() => {
@@ -255,6 +300,10 @@ export function AdminChatPanel() {
     return messages.length > 0 ? messages[messages.length - 1] : null;
   };
 
+  const isUserTyping = (userId) => {
+    return typingUsers[userId] && (new Date().getTime() - typingUsers[userId]) < 3000;
+  };
+
   return (
     <div className="flex h-[calc(100vh-16rem)] border rounded-lg overflow-hidden">
       {/* Lista de usuarios */}
@@ -315,7 +364,11 @@ export function AdminChatPanel() {
                       </div>
                       <div className="flex justify-between items-center">
                         <p className="text-sm text-gray-500 truncate">
-                          {lastMessage ? lastMessage.text : 'No hay mensajes'}
+                          {isUserTyping(userId) ? (
+                            <span className="text-blue-500">Escribiendo...</span>
+                          ) : (
+                            lastMessage ? lastMessage.text : 'No hay mensajes'
+                          )}
                         </p>
                         {unreadCount > 0 && (
                           <Badge className="ml-2 bg-blue-500">{unreadCount}</Badge>
@@ -389,6 +442,17 @@ export function AdminChatPanel() {
                       </div>
                     </div>
                   ))
+                )}
+                {isUserTyping(selectedUser.id) && (
+                  <div className="flex justify-start">
+                    <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3 text-gray-900 dark:text-gray-100">
+                      <div className="flex space-x-1">
+                        <div className="w-2 h-2 rounded-full bg-gray-500 animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                        <div className="w-2 h-2 rounded-full bg-gray-500 animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                        <div className="w-2 h-2 rounded-full bg-gray-500 animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                      </div>
+                    </div>
+                  </div>
                 )}
                 <div ref={messagesEndRef} />
               </div>

@@ -101,9 +101,6 @@ const setupWebSocket = (server) => {
                     io.to(adminId).emit('chat-message', message);
                 }
             }
-            
-            // Always send back to sender for confirmation
-            socket.emit('chat-message', message);
         });
 
         // Handle typing indicators
