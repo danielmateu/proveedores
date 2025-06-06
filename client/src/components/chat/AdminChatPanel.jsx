@@ -24,19 +24,17 @@ export function AdminChatPanel() {
   const [unreadCounts, setUnreadCounts] = useState({});
   const [isConnected, setIsConnected] = useState(false);
   const [typingUsers, setTypingUsers] = useState({});
+  const [initialFetchDone, setInitialFetchDone] = useState(false);
   const messagesEndRef = useRef(null);
   const userInfo = useUserInfoStore((state) => state.userInfo);
   const { customers, fetchCustomers, isLoading } = useCustomersStore();
   
-  console.log('AdminChatPanel rendered, socket:', socket ? 'exists' : 'null');
-
   // Inicializar socket
   useEffect(() => {
-    console.log('Initializing socket in AdminChatPanel');
     // Crear una sola instancia del socket
     if (!socket) {
       socket = io(apiUrl);
-      console.log('New socket created in AdminChatPanel');
+      console.log('Socket initialized in AdminChatPanel');
     }
 
     // Manejar eventos de conexión
@@ -52,12 +50,6 @@ export function AdminChatPanel() {
           role: 'admin',
           isSuperAdmin: userInfo.SuperAdmin === 1
         });
-        console.log('Admin identified:', {
-          userId: userInfo.ExternalLoginID,
-          name: `${userInfo.Name || ''} ${userInfo.Surname || ''}`.trim(),
-          role: 'admin',
-          isSuperAdmin: userInfo.SuperAdmin === 1
-        });
       }
     };
 
@@ -66,28 +58,22 @@ export function AdminChatPanel() {
       setIsConnected(false);
     };
 
-    const handleConnectError = (error) => {
-      console.error('Connection error:', error);
-      setIsConnected(false);
-    };
-
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
-    socket.on('connect_error', handleConnectError);
 
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
-      socket.off('connect_error', handleConnectError);
     };
   }, [userInfo]);
 
-  // Cargar clientes
+  // Cargar clientes solo una vez
   useEffect(() => {
-    if (!isLoading) {
+    if (!initialFetchDone && !isLoading) {
       fetchCustomers();
+      setInitialFetchDone(true);
     }
-  }, [fetchCustomers, isLoading]);
+  }, [fetchCustomers, isLoading, initialFetchDone]);
 
   useEffect(() => {
     // Cargar mensajes guardados del localStorage
@@ -103,8 +89,6 @@ export function AdminChatPanel() {
 
     // Escuchar actualizaciones de estado de usuarios
     const handleUserStatus = (data) => {
-      console.log('User status update:', data);
-      // Actualizar estado online
       setOnlineUsers(prev => ({
         ...prev,
         [data.userId]: data.status === 'online'
@@ -113,8 +97,6 @@ export function AdminChatPanel() {
 
     // Escuchar mensajes entrantes
     const handleChatMessage = (data) => {
-      console.log('Admin received message:', data);
-      
       // Solo procesar mensajes relevantes
       if (!data.sender) return;
       
@@ -158,7 +140,6 @@ export function AdminChatPanel() {
     
     // Escuchar indicadores de escritura
     const handleTyping = (data) => {
-      console.log('Typing indicator received:', data);
       if (data.sender && data.sender !== userInfo?.ExternalLoginID) {
         // Actualizar estado de escritura
         setTypingUsers(prev => {
@@ -223,8 +204,6 @@ export function AdminChatPanel() {
       isAdmin: true,
       recipient: selectedUser.id
     };
-    
-    console.log('Admin sending message:', newMessage);
     
     // Enviar mensaje al servidor
     socket.emit('chat-message', newMessage);
