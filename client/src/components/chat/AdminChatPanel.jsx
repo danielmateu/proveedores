@@ -23,6 +23,7 @@ export function AdminChatPanel() {
   const [onlineUsers, setOnlineUsers] = useState({});
   const [unreadCounts, setUnreadCounts] = useState({});
   const [isConnected, setIsConnected] = useState(false);
+  const [customersLoaded, setCustomersLoaded] = useState(false);
   const messagesEndRef = useRef(null);
   const userInfo = useUserInfoStore((state) => state.userInfo);
   const { customers, fetchCustomers, isLoading } = useCustomersStore();
@@ -77,10 +78,15 @@ export function AdminChatPanel() {
     };
   }, [userInfo]);
 
+  // Cargar clientes solo una vez
   useEffect(() => {
-    // Cargar los clientes desde el store
-    fetchCustomers();
-    
+    if (!customersLoaded && !isLoading) {
+      fetchCustomers();
+      setCustomersLoaded(true);
+    }
+  }, [customersLoaded, isLoading, fetchCustomers]);
+
+  useEffect(() => {
     // Cargar mensajes guardados del localStorage
     const savedMessages = localStorage.getItem('adminChatMessages');
     if (savedMessages) {
@@ -143,7 +149,7 @@ export function AdminChatPanel() {
       socket.off('user-status', handleUserStatus);
       socket.off('chat-message', handleChatMessage);
     };
-  }, [userInfo, selectedUser, fetchCustomers]);
+  }, [selectedUser]);
 
   // Scroll al fondo cuando cambian los mensajes
   useEffect(() => {
