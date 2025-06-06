@@ -1,5 +1,3 @@
-
-
 import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Navbar } from "./components/navbar/Navbar";
@@ -18,10 +16,8 @@ import SolicitudReparacionPage from "./pages/Asistencia/solicitud_reparacion_pag
 import SolicitudInstalacionPage from "./pages/Asistencia/solicitud_instalacion_page";
 import SolicitudVentaPage from "./pages/Asistencia/solicitud_venta_page";
 import SolicitudGarantiaPage from "./pages/Asistencia/solicitud_garantia_page";
-// import GestionesPage from "./pages/MisGestiones/gestiones_page";
 import DatosFiscalesPage from "./pages/DatosFiscales/datos_fiscales_page";
 import NuevoUsuarioPage from "./pages/MisGestiones/nuevo-usuario-page";
-// import PendientesPage from "./pages/MisGestiones/pendientes-page";
 import ResumenPage from "./pages/Resumen/resumen-page";
 import SatPage from "./pages/SAT/sat-page";
 import FacturacionPage from "./pages/Facturacion/facturacion-page";
@@ -29,7 +25,7 @@ import NuevoNegocioPage from "./pages/MisGestiones/nuevo-negocio-page";
 import AjustesPage from "./pages/Ajustes/ajustes_page";
 import SuperAdminPage from "./pages/SuperAdmin/super-admin-page";
 import NotFound404 from "./pages/NotFound404";
-// import Footer from "./components/footer/Footer";
+import { ChatWidget } from "./components/chat/ChatWidget";
 
 function App() {
     const location = useLocation();
@@ -93,8 +89,6 @@ function App() {
                         setActiveTab={setActiveTab}
                         onOpenDashboard={() => setIsDrawerOpen(true)}
                     />
-
-                    {/* <Footer /> */}
                 </>
             )}
 
@@ -117,8 +111,6 @@ function App() {
                     <Route path="/asistencia/venta" element={<SolicitudVentaPage />} />
                     <Route path="/asistencia/garantia" element={<SolicitudGarantiaPage />} />
 
-                    {/* <Route path="/gestiones" element={<GestionesPage />} /> */}
-                    {/* <Route path="/gestiones/pendientes" element={<PendientesPage />} /> */}
                     <Route path="/nuevo-usuario" element={<NuevoUsuarioPage />} />
                     <Route path="/nuevo-negocio" element={<NuevoNegocioPage />} />
 
@@ -138,11 +130,7 @@ function App() {
                 <Route path="*" element={<NotFound404 />} />
             </Routes>
 
-            {/* {shouldShowNavbar && (
-                <Footer />
-            )} */}
-
-
+            {isAuthenticated && <ChatWidget />}
         </div>
     );
 }

@@ -14,7 +14,8 @@ import {
     Wallet,
     Calendar,
     CheckCircle,
-    XCircle
+    XCircle,
+    MessageSquare
 } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import CalendarRange from "@/components/CalendarRange";
@@ -36,6 +37,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { io } from 'socket.io-client';
+
+const apiUrl = import.meta.env.VITE_API_URL;
+const socket = io(apiUrl);
 
 export default function SuperAdminPage() {
     const userInfo = useUserInfoStore((state) => state.userInfo);
@@ -49,6 +55,12 @@ export default function SuperAdminPage() {
     const [showPaymentDialog, setShowPaymentDialog] = useState(false);
     const [processingPayment, setProcessingPayment] = useState(false);
     const [selectedPaymentPeriod, setSelectedPaymentPeriod] = useState(null);
+    const [chatUsers, setChatUsers] = useState([]);
+    const [selectedChatUser, setSelectedChatUser] = useState(null);
+    const [chatMessages, setChatMessages] = useState([]);
+    const [newMessage, setNewMessage] = useState('');
+    const [showChatDialog, setShowChatDialog] = useState(false);
+    const messagesEndRef = useRef(null);
 
     const { toast } = useToast();
     const { customers, fetchCustomers, isLoading: customersLoading } = useCustomersStore();
@@ -58,7 +70,75 @@ export default function SuperAdminPage() {
 
     useEffect(() => {
         document.title = 'Rapitecnic | ' + t('SuperAdminPanel');
-    }, []);
+        
+        // Connect to socket for chat
+        socket.on('connect', () => {
+            console.log('Connected to socket as admin');
+            
+            // Identify as superadmin
+            socket.emit('identify', {
+                userId: userInfo?.ExternalLoginID,
+                name: `${userInfo?.Name || ''} ${userInfo?.Surname || ''}`.trim(),
+                role: 'admin',
+                isSuperAdmin: true
+            });
+        });
+        
+        // Listen for user status changes
+        socket.on('user-status', (data) => {
+            setChatUsers(prev => {
+                // Update existing user or add new one
+                const existingUserIndex = prev.findIndex(u => u.userId === data.userId);
+                if (existingUserIndex >= 0) {
+                    const updatedUsers = [...prev];
+                    updatedUsers[existingUserIndex] = {
+                        ...updatedUsers[existingUserIndex],
+                        status: data.status,
+                        lastSeen: data.timestamp
+                    };
+                    return updatedUsers;
+                } else {
+                    return [...prev, {
+                        userId: data.userId,
+                        name: data.name,
+                        status: data.status,
+                        lastSeen: data.timestamp,
+                        unreadCount: 0
+                    }];
+                }
+            });
+        });
+        
+        // Listen for chat messages
+        socket.on('chat-message', (data) => {
+            // Only process messages not sent by this user
+            if (data.sender !== userInfo?.ExternalLoginID) {
+                setChatMessages(prev => [...prev, data]);
+                
+                // Update unread count for user
+                setChatUsers(prev => {
+                    const updatedUsers = [...prev];
+                    const userIndex = updatedUsers.findIndex(u => u.userId === data.sender);
+                    if (userIndex >= 0) {
+                        if (!selectedChatUser || selectedChatUser.userId !== data.sender || !showChatDialog) {
+                            updatedUsers[userIndex].unreadCount = (updatedUsers[userIndex].unreadCount || 0) + 1;
+                        }
+                    }
+                    return updatedUsers;
+                });
+            }
+        });
+        
+        return () => {
+            socket.off('user-status');
+            socket.off('chat-message');
+        };
+    }, [userInfo, selectedChatUser, showChatDialog]);
+
+    // Scroll to bottom when chat messages change
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [chatMessages]);
 
     useEffect(() => {
         if (userInfo?.Ex_InvoicingAddressID) {
@@ -252,6 +332,55 @@ export default function SuperAdminPage() {
         });
     };
 
+    const handleSendChatMessage = () => {
+        if (!newMessage.trim() || !selectedChatUser) return;
+        
+        const messageData = {
+            id: Date.now(),
+            text: newMessage,
+            sender: userInfo.ExternalLoginID,
+            senderName: `${userInfo.Name} ${userInfo.Surname || ''}`.trim(),
+            recipient: selectedChatUser.userId,
+            timestamp: new Date().toISOString(),
+            isAdmin: true
+        };
+        
+        // Send message via socket
+        socket.emit('chat-message', messageData);
+        
+        // Add to local state
+        setChatMessages(prev => [...prev, messageData]);
+        
+        // Clear input
+        setNewMessage('');
+    };
+
+    const handleOpenChat = (user) => {
+        setSelectedChatUser(user);
+        
+        // Reset unread count for this user
+        setChatUsers(prev => {
+            const updatedUsers = [...prev];
+            const userIndex = updatedUsers.findIndex(u => u.userId === user.userId);
+            if (userIndex >= 0) {
+                updatedUsers[userIndex].unreadCount = 0;
+            }
+            return updatedUsers;
+        });
+        
+        // Filter messages for this user
+        const userMessages = chatMessages.filter(msg => 
+            msg.sender === user.userId || 
+            (msg.sender === userInfo.ExternalLoginID && msg.recipient === user.userId)
+        );
+        
+        setShowChatDialog(true);
+    };
+
+    const getTotalUnreadMessages = () => {
+        return chatUsers.reduce((total, user) => total + (user.unreadCount || 0), 0);
+    };
+
     if (customersLoading || noticesLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -294,6 +423,20 @@ export default function SuperAdminPage() {
                             
                             <Button 
                                 variant="outline" 
+                                className="flex items-center gap-2 relative"
+                                onClick={() => setShowChatDialog(true)}
+                            >
+                                <MessageSquare className="h-4 w-4" />
+                                Chat de Soporte
+                                {getTotalUnreadMessages() > 0 && (
+                                    <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0">
+                                        {getTotalUnreadMessages()}
+                                    </Badge>
+                                )}
+                            </Button>
+                            
+                            <Button 
+                                variant="outline" 
                                 className="flex items-center gap-2"
                                 onClick={() => setShowPaymentDialog(true)}
                             >
@@ -328,6 +471,15 @@ export default function SuperAdminPage() {
                         <TabsTrigger value="payments">
                             <Wallet className="h-4 w-4 mr-2" />
                             {t("PendingPayments")}
+                        </TabsTrigger>
+                        <TabsTrigger value="chat">
+                            <MessageSquare className="h-4 w-4 mr-2" />
+                            Chat
+                            {getTotalUnreadMessages() > 0 && (
+                                <Badge variant="destructive" className="ml-2">
+                                    {getTotalUnreadMessages()}
+                                </Badge>
+                            )}
                         </TabsTrigger>
                     </TabsList>
 
@@ -460,6 +612,155 @@ export default function SuperAdminPage() {
                             onReject={handleRejectPayment}
                         />
                     </TabsContent>
+                    
+                    <TabsContent value="chat">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <MessageSquare className="h-5 w-5" />
+                                    Chat de Soporte
+                                </CardTitle>
+                                <CardDescription>
+                                    Gestione las conversaciones con los usuarios de la plataforma
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div className="col-span-1 border rounded-lg overflow-hidden">
+                                        <div className="bg-gray-100 dark:bg-gray-800 p-3 border-b">
+                                            <h3 className="font-medium">Usuarios</h3>
+                                        </div>
+                                        <ScrollArea className="h-[500px]">
+                                            {chatUsers.length > 0 ? (
+                                                <div className="divide-y">
+                                                    {chatUsers.map(user => (
+                                                        <div 
+                                                            key={user.userId}
+                                                            className={`p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer flex items-center justify-between ${
+                                                                selectedChatUser?.userId === user.userId ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                                                            }`}
+                                                            onClick={() => handleOpenChat(user)}
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="relative">
+                                                                    <Avatar className="h-10 w-10">
+                                                                        <AvatarFallback>
+                                                                            {user.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                                                        </AvatarFallback>
+                                                                    </Avatar>
+                                                                    <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${
+                                                                        user.status === 'online' ? 'bg-green-500' : 'bg-gray-400'
+                                                                    }`}></span>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="font-medium">{user.name}</p>
+                                                                    <p className="text-xs text-gray-500">
+                                                                        {user.status === 'online' ? 'En línea' : 'Desconectado'}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            {user.unreadCount > 0 && (
+                                                                <Badge variant="destructive" className="rounded-full">
+                                                                    {user.unreadCount}
+                                                                </Badge>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="p-6 text-center text-gray-500">
+                                                    No hay usuarios conectados
+                                                </div>
+                                            )}
+                                        </ScrollArea>
+                                    </div>
+                                    
+                                    <div className="col-span-2 border rounded-lg overflow-hidden">
+                                        {selectedChatUser ? (
+                                            <>
+                                                <div className="bg-gray-100 dark:bg-gray-800 p-3 border-b flex justify-between items-center">
+                                                    <div className="flex items-center gap-3">
+                                                        <Avatar className="h-8 w-8">
+                                                            <AvatarFallback>
+                                                                {selectedChatUser.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                                            </AvatarFallback>
+                                                        </Avatar>
+                                                        <div>
+                                                            <h3 className="font-medium">{selectedChatUser.name}</h3>
+                                                            <p className="text-xs text-gray-500">
+                                                                {selectedChatUser.status === 'online' ? 'En línea' : 'Desconectado'}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <ScrollArea className="h-[400px] p-4">
+                                                    <div className="space-y-4">
+                                                        {chatMessages
+                                                            .filter(msg => 
+                                                                msg.sender === selectedChatUser.userId || 
+                                                                (msg.sender === userInfo.ExternalLoginID && msg.recipient === selectedChatUser.userId)
+                                                            )
+                                                            .map(message => (
+                                                                <div 
+                                                                    key={message.id} 
+                                                                    className={`flex ${message.sender === userInfo.ExternalLoginID ? 'justify-end' : 'justify-start'}`}
+                                                                >
+                                                                    <div className={`max-w-[70%] rounded-lg p-3 ${
+                                                                        message.sender === userInfo.ExternalLoginID 
+                                                                            ? 'bg-blue-500 text-white' 
+                                                                            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                                                                    }`}>
+                                                                        <p className="whitespace-pre-wrap break-words">{message.text}</p>
+                                                                        <p className="text-xs mt-1 opacity-70">
+                                                                            {new Date(message.timestamp).toLocaleTimeString()}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            ))
+                                                        }
+                                                        <div ref={messagesEndRef} />
+                                                    </div>
+                                                </ScrollArea>
+                                                
+                                                <div className="p-3 border-t">
+                                                    <div className="flex gap-2">
+                                                        <Textarea
+                                                            value={newMessage}
+                                                            onChange={(e) => setNewMessage(e.target.value)}
+                                                            placeholder="Escribe un mensaje..."
+                                                            className="resize-none min-h-[40px]"
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                                    e.preventDefault();
+                                                                    handleSendChatMessage();
+                                                                }
+                                                            }}
+                                                        />
+                                                        <Button onClick={handleSendChatMessage}>
+                                                            <Send className="h-4 w-4" />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="h-full flex items-center justify-center p-6">
+                                                <div className="text-center">
+                                                    <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                                                    <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300">
+                                                        Selecciona un usuario para chatear
+                                                    </h3>
+                                                    <p className="text-gray-500 mt-2">
+                                                        Las conversaciones aparecerán aquí
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
                 </Tabs>
             </main>
             
@@ -525,6 +826,181 @@ export default function SuperAdminPage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+            
+            <Dialog open={showChatDialog} onOpenChange={setShowChatDialog}>
+                <DialogContent className="sm:max-w-[800px] max-h-[80vh] flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle>Chat de Soporte</DialogTitle>
+                        <DialogDescription>
+                            Gestione las conversaciones con los usuarios de la plataforma
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-grow overflow-hidden">
+                        <div className="border rounded-lg overflow-hidden">
+                            <div className="bg-gray-100 dark:bg-gray-800 p-3 border-b">
+                                <h3 className="font-medium">Usuarios</h3>
+                            </div>
+                            <ScrollArea className="h-[400px]">
+                                {chatUsers.length > 0 ? (
+                                    <div className="divide-y">
+                                        {chatUsers.map(user => (
+                                            <div 
+                                                key={user.userId}
+                                                className={`p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer flex items-center justify-between ${
+                                                    selectedChatUser?.userId === user.userId ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                                                }`}
+                                                onClick={() => handleOpenChat(user)}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="relative">
+                                                        <Avatar className="h-10 w-10">
+                                                            <AvatarFallback>
+                                                                {user.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                                            </AvatarFallback>
+                                                        </Avatar>
+                                                        <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${
+                                                            user.status === 'online' ? 'bg-green-500' : 'bg-gray-400'
+                                                        }`}></span>
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-medium">{user.name}</p>
+                                                        <p className="text-xs text-gray-500">
+                                                            {user.status === 'online' ? 'En línea' : 'Desconectado'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {user.unreadCount > 0 && (
+                                                    <Badge variant="destructive" className="rounded-full">
+                                                        {user.unreadCount}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="p-6 text-center text-gray-500">
+                                        No hay usuarios conectados
+                                    </div>
+                                )}
+                            </ScrollArea>
+                        </div>
+                        
+                        <div className="col-span-2 border rounded-lg overflow-hidden flex flex-col">
+                            {selectedChatUser ? (
+                                <>
+                                    <div className="bg-gray-100 dark:bg-gray-800 p-3 border-b flex justify-between items-center">
+                                        <div className="flex items-center gap-3">
+                                            <Avatar className="h-8 w-8">
+                                                <AvatarFallback>
+                                                    {selectedChatUser.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            <div>
+                                                <h3 className="font-medium">{selectedChatUser.name}</h3>
+                                                <p className="text-xs text-gray-500">
+                                                    {selectedChatUser.status === 'online' ? 'En línea' : 'Desconectado'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <ScrollArea className="flex-grow p-4 h-[300px]">
+                                        <div className="space-y-4">
+                                            {chatMessages
+                                                .filter(msg => 
+                                                    msg.sender === selectedChatUser.userId || 
+                                                    (msg.sender === userInfo.ExternalLoginID && msg.recipient === selectedChatUser.userId)
+                                                )
+                                                .map(message => (
+                                                    <div 
+                                                        key={message.id} 
+                                                        className={`flex ${message.sender === userInfo.ExternalLoginID ? 'justify-end' : 'justify-start'}`}
+                                                    >
+                                                        <div className={`max-w-[70%] rounded-lg p-3 ${
+                                                            message.sender === userInfo.ExternalLoginID 
+                                                                ? 'bg-blue-500 text-white' 
+                                                                : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                                                        }`}>
+                                                            <p className="whitespace-pre-wrap break-words">{message.text}</p>
+                                                            <p className="text-xs mt-1 opacity-70">
+                                                                {new Date(message.timestamp).toLocaleTimeString()}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            }
+                                            <div ref={messagesEndRef} />
+                                        </div>
+                                    </ScrollArea>
+                                    
+                                    <div className="p-3 border-t mt-auto">
+                                        <div className="flex gap-2">
+                                            <Textarea
+                                                value={newMessage}
+                                                onChange={(e) => setNewMessage(e.target.value)}
+                                                placeholder="Escribe un mensaje..."
+                                                className="resize-none min-h-[40px]"
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                                        e.preventDefault();
+                                                        handleSendChatMessage();
+                                                    }
+                                                }}
+                                            />
+                                            <Button onClick={handleSendChatMessage}>
+                                                <Send className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="h-full flex items-center justify-center p-6">
+                                    <div className="text-center">
+                                        <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                                        <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300">
+                                            Selecciona un usuario para chatear
+                                        </h3>
+                                        <p className="text-gray-500 mt-2">
+                                            Las conversaciones aparecerán aquí
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
+
+// Add missing imports
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Textarea } from "@/components/ui/textarea";
+import { Send } from "lucide-react";
+import { useRef } from "react";
+
+// Add missing statusOptionsMapping
+const statusOptionsMapping = [
+    {
+        id: 1,
+        name: 'InProcess',
+        statusId: ["1", "26"],
+    },
+    {
+        id: 2,
+        name: 'Finished',
+        statusId: ["27"]
+    },
+    {
+        id: 3,
+        name: 'Charged',
+        statusId: ["38"]
+    },
+    {
+        id: 4,
+        name: 'Canceled',
+        statusId: ["20"]
+    },
+];
