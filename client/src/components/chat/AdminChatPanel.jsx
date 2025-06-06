@@ -13,7 +13,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 const apiUrl = import.meta.env.VITE_API_URL;
-const socket = io(apiUrl);
+let socket;
 
 export function AdminChatPanel() {
   const [message, setMessage] = useState('');
@@ -22,9 +22,60 @@ export function AdminChatPanel() {
   const [userMessages, setUserMessages] = useState({});
   const [onlineUsers, setOnlineUsers] = useState({});
   const [unreadCounts, setUnreadCounts] = useState({});
+  const [isConnected, setIsConnected] = useState(false);
   const messagesEndRef = useRef(null);
   const userInfo = useUserInfoStore((state) => state.userInfo);
   const { customers, fetchCustomers, isLoading } = useCustomersStore();
+
+  // Inicializar socket
+  useEffect(() => {
+    // Crear una sola instancia del socket
+    if (!socket) {
+      socket = io(apiUrl);
+    }
+
+    // Manejar eventos de conexión
+    const handleConnect = () => {
+      console.log('Admin connected to chat socket');
+      setIsConnected(true);
+      
+      // Identificar al admin en el servidor
+      if (userInfo?.ExternalLoginID) {
+        socket.emit('identify', {
+          userId: userInfo.ExternalLoginID,
+          name: `${userInfo.Name || ''} ${userInfo.Surname || ''}`.trim(),
+          role: 'admin',
+          isSuperAdmin: userInfo.SuperAdmin === 1
+        });
+        console.log('Admin identified:', {
+          userId: userInfo.ExternalLoginID,
+          name: `${userInfo.Name || ''} ${userInfo.Surname || ''}`.trim(),
+          role: 'admin',
+          isSuperAdmin: userInfo.SuperAdmin === 1
+        });
+      }
+    };
+
+    const handleDisconnect = () => {
+      console.log('Admin disconnected from chat socket');
+      setIsConnected(false);
+    };
+
+    const handleConnectError = (error) => {
+      console.error('Connection error:', error);
+      setIsConnected(false);
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
+    };
+  }, [userInfo]);
 
   useEffect(() => {
     // Cargar los clientes desde el store
@@ -36,37 +87,24 @@ export function AdminChatPanel() {
       setUserMessages(JSON.parse(savedMessages));
     }
 
-    // Conectar al socket
-    socket.on('connect', () => {
-      console.log('Admin connected to chat socket');
-      
-      // Identificar al admin en el servidor
-      if (userInfo?.ExternalLoginID) {
-        socket.emit('identify', {
-          userId: userInfo.ExternalLoginID,
-          name: `${userInfo.Name} ${userInfo.Surname || ''}`.trim(),
-          role: 'admin',
-          isSuperAdmin: true
-        });
-      }
-    });
-
     // Escuchar actualizaciones de estado de usuarios
-    socket.on('user-status', (data) => {
+    const handleUserStatus = (data) => {
+      console.log('User status update:', data);
       // Actualizar estado online
       setOnlineUsers(prev => ({
         ...prev,
         [data.userId]: data.status === 'online'
       }));
-    });
+    };
 
     // Escuchar mensajes entrantes
-    socket.on('chat-message', (data) => {
-      // Solo procesar mensajes para el admin
-      if (!userInfo?.SuperAdmin) return;
+    const handleChatMessage = (data) => {
+      console.log('Admin received message:', data);
+      
+      // Solo procesar mensajes relevantes
+      if (!data.sender) return;
       
       const senderId = data.sender;
-      if (!senderId) return;
       
       // Añadir mensaje a los mensajes del usuario
       setUserMessages(prev => {
@@ -96,11 +134,14 @@ export function AdminChatPanel() {
           [senderId]: (prev[senderId] || 0) + 1
         }));
       }
-    });
+    };
+
+    socket.on('user-status', handleUserStatus);
+    socket.on('chat-message', handleChatMessage);
 
     return () => {
-      socket.off('user-status');
-      socket.off('chat-message');
+      socket.off('user-status', handleUserStatus);
+      socket.off('chat-message', handleChatMessage);
     };
   }, [userInfo, selectedUser, fetchCustomers]);
 
@@ -126,13 +167,18 @@ export function AdminChatPanel() {
       id: Date.now(),
       text: message,
       sender: userInfo.ExternalLoginID,
-      senderName: `${userInfo.Name} ${userInfo.Surname || ''}`.trim(),
+      senderName: `${userInfo.Name || ''} ${userInfo.Surname || ''}`.trim(),
       timestamp: new Date().toISOString(),
       isAdmin: true,
       recipient: selectedUser.id
     };
     
-    // Añadir mensaje a los mensajes del usuario
+    console.log('Admin sending message:', newMessage);
+    
+    // Enviar mensaje al servidor
+    socket.emit('chat-message', newMessage);
+    
+    // Añadir mensaje a los mensajes del usuario (optimista)
     setUserMessages(prev => {
       const userMsgs = prev[selectedUser.id] || [];
       const updatedMsgs = [...userMsgs, newMessage];
@@ -146,9 +192,6 @@ export function AdminChatPanel() {
       return newMessages;
     });
     
-    // Enviar mensaje al servidor
-    socket.emit('chat-message', newMessage);
-    
     // Limpiar input
     setMessage('');
   };
@@ -157,6 +200,15 @@ export function AdminChatPanel() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+    }
+    
+    // Enviar indicador de escritura
+    if (selectedUser) {
+      socket.emit('typing', {
+        sender: userInfo?.ExternalLoginID,
+        recipient: selectedUser.id,
+        timestamp: new Date().toISOString()
+      });
     }
   };
 
@@ -290,6 +342,11 @@ export function AdminChatPanel() {
                   </div>
                 </div>
               </div>
+              {!isConnected && (
+                <Badge variant="outline" className="text-xs bg-yellow-500 text-white">
+                  Reconectando...
+                </Badge>
+              )}
             </div>
             
             {/* Mensajes del chat */}
@@ -341,11 +398,13 @@ export function AdminChatPanel() {
                   placeholder="Escribe un mensaje..."
                   className="resize-none min-h-[40px] max-h-[120px]"
                   rows={1}
+                  disabled={!isConnected}
                 />
                 <Button 
                   onClick={handleSendMessage} 
                   size="icon" 
                   className="h-10 w-10"
+                  disabled={!isConnected}
                 >
                   <Send size={18} />
                 </Button>

@@ -12,7 +12,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 const apiUrl = import.meta.env.VITE_API_URL;
-const socket = io(apiUrl);
+let socket;
 
 export function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
@@ -22,36 +22,77 @@ export function ChatWidget() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isTyping, setIsTyping] = useState(false);
   const [typingTimeout, setTypingTimeout] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
   const messagesEndRef = useRef(null);
   const userInfo = useUserInfoStore((state) => state.userInfo);
   const { toast } = useToast();
 
+  // Inicializar socket
   useEffect(() => {
-    // Cargar mensajes previos del localStorage
-    const savedMessages = localStorage.getItem(`chatMessages-${userInfo?.ExternalLoginID}`);
-    if (savedMessages) {
-      setMessages(JSON.parse(savedMessages));
+    // Crear una sola instancia del socket
+    if (!socket) {
+      socket = io(apiUrl);
     }
 
-    // Conectar al socket
-    socket.on('connect', () => {
+    // Manejar eventos de conexión
+    const handleConnect = () => {
       console.log('Connected to chat socket');
+      setIsConnected(true);
       
       // Identificar usuario al servidor
       if (userInfo?.ExternalLoginID) {
         socket.emit('identify', {
           userId: userInfo.ExternalLoginID,
-          name: `${userInfo.Name} ${userInfo.Surname || ''}`.trim(),
+          name: `${userInfo.Name || ''} ${userInfo.Surname || ''}`.trim(),
           role: userInfo.Administrator ? 'admin' : 'user',
-          isSuperAdmin: userInfo.SuperAdmin
+          isSuperAdmin: userInfo.SuperAdmin === 1
+        });
+        console.log('User identified:', {
+          userId: userInfo.ExternalLoginID,
+          name: `${userInfo.Name || ''} ${userInfo.Surname || ''}`.trim(),
+          role: userInfo.Administrator ? 'admin' : 'user',
+          isSuperAdmin: userInfo.SuperAdmin === 1
         });
       }
-    });
+    };
+
+    const handleDisconnect = () => {
+      console.log('Disconnected from chat socket');
+      setIsConnected(false);
+    };
+
+    const handleConnectError = (error) => {
+      console.error('Connection error:', error);
+      setIsConnected(false);
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
+    };
+  }, [userInfo]);
+
+  // Cargar mensajes y configurar listeners
+  useEffect(() => {
+    if (!userInfo?.ExternalLoginID) return;
+
+    // Cargar mensajes previos del localStorage
+    const savedMessages = localStorage.getItem(`chatMessages-${userInfo.ExternalLoginID}`);
+    if (savedMessages) {
+      setMessages(JSON.parse(savedMessages));
+    }
 
     // Escuchar mensajes entrantes
-    socket.on('chat-message', (data) => {
+    const handleChatMessage = (data) => {
+      console.log('Received message:', data);
+      
       // Solo procesar mensajes para este usuario
-      if (data.recipient === userInfo?.ExternalLoginID || data.sender === userInfo?.ExternalLoginID) {
+      if (data.recipient === userInfo.ExternalLoginID || data.sender === userInfo.ExternalLoginID) {
         const newMessage = {
           id: Date.now(),
           text: data.text,
@@ -63,7 +104,7 @@ export function ChatWidget() {
         
         setMessages(prev => {
           const updatedMessages = [...prev, newMessage];
-          localStorage.setItem(`chatMessages-${userInfo?.ExternalLoginID}`, JSON.stringify(updatedMessages));
+          localStorage.setItem(`chatMessages-${userInfo.ExternalLoginID}`, JSON.stringify(updatedMessages));
           return updatedMessages;
         });
         
@@ -72,11 +113,11 @@ export function ChatWidget() {
           setUnreadCount(prev => prev + 1);
         }
       }
-    });
+    };
 
     // Escuchar indicadores de escritura
-    socket.on('typing', (data) => {
-      if (data.sender !== userInfo?.ExternalLoginID) {
+    const handleTyping = (data) => {
+      if (data.sender !== userInfo.ExternalLoginID) {
         setIsTyping(true);
         
         // Limpiar timeout anterior
@@ -91,11 +132,14 @@ export function ChatWidget() {
         
         setTypingTimeout(timeout);
       }
-    });
+    };
+
+    socket.on('chat-message', handleChatMessage);
+    socket.on('typing', handleTyping);
 
     return () => {
-      socket.off('chat-message');
-      socket.off('typing');
+      socket.off('chat-message', handleChatMessage);
+      socket.off('typing', handleTyping);
       if (typingTimeout) {
         clearTimeout(typingTimeout);
       }
@@ -130,13 +174,22 @@ export function ChatWidget() {
       id: Date.now(),
       text: message,
       sender: userInfo.ExternalLoginID,
-      senderName: `${userInfo.Name} ${userInfo.Surname || ''}`.trim(),
+      senderName: `${userInfo.Name || ''} ${userInfo.Surname || ''}`.trim(),
       timestamp: new Date().toISOString(),
-      isAdmin: userInfo.SuperAdmin
+      isAdmin: userInfo.SuperAdmin === 1
     };
+    
+    console.log('Sending message:', newMessage);
     
     // Enviar mensaje al servidor
     socket.emit('chat-message', newMessage);
+    
+    // Añadir mensaje localmente (optimista)
+    setMessages(prev => {
+      const updatedMessages = [...prev, newMessage];
+      localStorage.setItem(`chatMessages-${userInfo.ExternalLoginID}`, JSON.stringify(updatedMessages));
+      return updatedMessages;
+    });
     
     // Limpiar input
     setMessage('');
@@ -184,6 +237,11 @@ export function ChatWidget() {
             <div className="flex items-center gap-2">
               <MessageSquare size={18} />
               <h3 className="font-medium">Soporte Rapitecnic</h3>
+              {!isConnected && (
+                <Badge variant="outline" className="text-xs bg-yellow-500 text-white">
+                  Reconectando...
+                </Badge>
+              )}
             </div>
             <div className="flex items-center gap-1">
               {isMinimized ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
@@ -257,11 +315,13 @@ export function ChatWidget() {
                     placeholder="Escribe un mensaje..."
                     className="resize-none min-h-[40px] max-h-[120px]"
                     rows={1}
+                    disabled={!isConnected}
                   />
                   <Button 
                     onClick={handleSendMessage} 
                     size="icon" 
                     className="h-10 w-10"
+                    disabled={!isConnected}
                   >
                     <Send size={18} />
                   </Button>
