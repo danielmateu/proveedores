@@ -28,7 +28,7 @@ export function ChatWidget() {
 
   useEffect(() => {
     // Load previous messages from localStorage
-    const savedMessages = localStorage.getItem('chatMessages');
+    const savedMessages = localStorage.getItem(`chatMessages-${userInfo?.ExternalLoginID}`);
     if (savedMessages) {
       setMessages(JSON.parse(savedMessages));
     }
@@ -50,24 +50,27 @@ export function ChatWidget() {
 
     // Listen for incoming messages
     socket.on('chat-message', (data) => {
-      const newMessage = {
-        id: Date.now(),
-        text: data.text,
-        sender: data.sender,
-        senderName: data.senderName,
-        timestamp: data.timestamp || new Date().toISOString(),
-        isAdmin: data.isAdmin
-      };
-      
-      setMessages(prev => {
-        const updatedMessages = [...prev, newMessage];
-        localStorage.setItem('chatMessages', JSON.stringify(updatedMessages));
-        return updatedMessages;
-      });
-      
-      // If chat is not open, increment unread count
-      if (!isOpen) {
-        setUnreadCount(prev => prev + 1);
+      // Only process messages for this user
+      if (data.recipient === userInfo?.ExternalLoginID || data.sender === userInfo?.ExternalLoginID) {
+        const newMessage = {
+          id: Date.now(),
+          text: data.text,
+          sender: data.sender,
+          senderName: data.senderName,
+          timestamp: data.timestamp || new Date().toISOString(),
+          isAdmin: data.isAdmin
+        };
+        
+        setMessages(prev => {
+          const updatedMessages = [...prev, newMessage];
+          localStorage.setItem(`chatMessages-${userInfo?.ExternalLoginID}`, JSON.stringify(updatedMessages));
+          return updatedMessages;
+        });
+        
+        // If chat is not open, increment unread count
+        if (!isOpen) {
+          setUnreadCount(prev => prev + 1);
+        }
       }
     });
 
@@ -129,15 +132,8 @@ export function ChatWidget() {
       sender: userInfo.ExternalLoginID,
       senderName: `${userInfo.Name} ${userInfo.Surname || ''}`.trim(),
       timestamp: new Date().toISOString(),
-      isAdmin: userInfo.Administrator
+      isAdmin: userInfo.SuperAdmin
     };
-    
-    // Add message to local state
-    setMessages(prev => {
-      const updatedMessages = [...prev, newMessage];
-      localStorage.setItem('chatMessages', JSON.stringify(updatedMessages));
-      return updatedMessages;
-    });
     
     // Send message to server
     socket.emit('chat-message', newMessage);
